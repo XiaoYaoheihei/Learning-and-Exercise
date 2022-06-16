@@ -1,3 +1,4 @@
+//互斥锁学习的前提问题
 #include<stdio.h>
 #include<unistd.h>
 #include<stdlib.h>
