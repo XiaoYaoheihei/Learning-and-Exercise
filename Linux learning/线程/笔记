@@ -1,0 +1,249 @@
+2.4 线程分离
+主线程不可能在使用阻塞函数后就一直停在那里不往下进行了，那他如果还想要执行一些任务该怎么办呢？
+
+分离的用法就比前面的回收高级很多！！
+int pthread_detach(pthread_t thread)
+//参数为某一个你想要分离的子线程的id
+
+当调用了这个函数之后，子线程就可以和主线程分离，当子线程退出的时候，其占用的内核资源就被系统的其他进程接管并回收了;而主线程退出的时候他占用的资源就会被系统回收。但是线程分离之后在主线程中使用 pthread_join() 就回收不到子线程资源了。
+
+//子线程处理的部分
+void* work(void* arg) {
+    ...
+    ...
+    return NULL;
+}
+int main() {
+    ...
+    //主线程执行完主要任务之后就让他和子线程分离
+    //这个分离完之后也不可以省略exit哦，为了避免释放内存空间的问题
+    pthread_detach(tid);
+
+    //主线程直接结束，选择了主动退出而且并不会释放内存空间哦
+    //真是妙极了
+    pthread_exit(NULL);
+}
+2.5 线程取消
+线程取消的意思就是在某些特定情况下在一个线程中杀死另一个线程。使用这个函数杀死一个线程需要分两步：
+
+1).在线程 A 中调用线程取消函数 pthread_cancel，指定杀死线程 B，这时候线程 B 是死不了的。
+
+2).只有当线程 B 中进行一次系统调用此时这个线程才可以被杀死，否则线程 B 可以一直运行。
+
+int pthread_cancel(pthread_t thread)
+
+参数：要杀死的线程的线程 ID  
+
+返回值：函数调用成功返回 0，调用失败返回非 0 错误号。
+3.线程同步
+3.1 为什么要进行线程同步
+在现实的应用程序当中，我们的一个进程往往不止一个线程，会有多个线程并发执行，而在多个线程工作的时候，难免会有这么一种情况：大家都争先恐后的去访问一个共有的资源。那这个时候就会出现问题了，因为我们的cpu是分时间片执行的，当一个线程抢到时间之后，他访问公共资源，如果他修改到一半的时候时间到了，停止了换成另一个线程，等那个线程再次抢到时间片的时候是继续修改我们未修改完的东西呢还是？
+
+充当解决方的我们，肯定是这样想的：让这个线程下次抢到时间片的时候再一次按照上一次未执行完的动作执行；在被其他线程抢到的过程中，让这些线程不要修改上一个线程的完成情况，同时也不要修改这个公共资源。
+
+解决方法：让这些线程依次访问共享资源,当其中一个访问的时候，其他几个被阻塞，直到这个线程对资源访问完毕，其他线程才可以再次访问，然后以此类推直到所有都访问完。
+
+所谓的同步并不是多个线程同时对内存进行访问，而是按照先后顺序依次进行的。
+
+3.2 同步的方式
+    对于多个线程访问共享资源出现数据混乱的问题，需要进行线程同步。常用的线程同步方式有四种：互斥锁、读写锁、条件变量、信号量。所谓的共享资源就是多个线程共同访问的变量，这些变量通常为全局数据区变量或者堆区变量，这些变量对应的共享资源也被称之为临界资源。
+4.互斥锁的使用
+顾名思义：互斥就是互不相容的意思。其本质就是通过一个锁将一个代码块锁定，而锁这个动作是由某一个线程操作的，打开这个锁的过程也只能是由这个专有的线程操作。
+当这个代码块被锁住的时候，其他线程就会被同时阻塞在锁的位置，当持有锁的进程重新获得时间，他会继续进行操作，直到解锁。这个时候被阻塞在锁上的其他线程就会争抢开锁的机会，谁抢到谁就会进行资源访问，其他线程再慢慢等。
+互斥锁相关函数：
+
+#include<stdio.h>
+#include<unistd.h>
+#include<stdlib.h>
+#include<sys/types.h>
+#include<sys/stat.h>
+#include<string.h>
+#include<pthread.h>
+
+#define MAX 50
+
+int number;
+
+pthread_mutex_t mutex;
+//创建一把互斥锁
+//全局变量，多个线程共享
+
+void *fun1 (void *argc) {
+    for (int i = 0; i < MAX; i++) {
+        //线程1如果加锁成功，不会进行阻塞
+        //如果其他线程加锁成功，会把线程1阻塞
+        pthread_mutex_lock(&mutex);
+        int cur = number;
+        cur++;
+        //usleep(10);
+        number = cur;
+        printf("thread1 , id = %lu, number = %d\n", pthread_self(), number);
+        pthread_mutex_unlock(&mutex);
+        usleep(5);
+    }
+    return NULL;
+}
+
+void *fun2 (void *argc) {
+    for (int i = 0; i < MAX; i++) {
+        //如果线程1加锁成功的话，那么线程2访问这把锁的时候是锁定的
+        //线程2这个时候被阻塞，直到1解锁
+        //线程2这个时候再加锁
+        pthread_mutex_lock(&mutex);
+        int cur = number;
+        cur++;
+        //usleep(10);
+        number = cur;
+        printf("thread2 , id = %lu, number = %d\n", pthread_self(), number);
+        pthread_mutex_unlock(&mutex);
+        usleep(10);
+    }
+    return  NULL;
+
+}
+
+
+int main() {
+    pthread_t p1, p2;
+
+    //初始化互斥锁
+    pthread_mutex_init(&mutex, NULL);
+
+    pthread_create(&p1, NULL, fun1, NULL);
+    pthread_create(&p2, NULL, fun2, NULL);
+
+    pthread_join(p1, NULL);
+    pthread_join(p2, NULL);
+
+    pthread_mutex_destroy(&mutex);
+    //销毁互斥锁
+    //线程销毁之后再去销毁锁
+    return 0;
+
+}
+5.死锁
+如果锁使用不当的话，就会造成死锁的情况，这个后果是：所有的线程都会被阻塞，并且阻塞的线程是不会被打开的。
+情景如下：
+1）.加锁之后忘了解锁
+2）.重复加锁导致这种情况
+3）.加锁成功之后在临界区内访问另一个有加锁情况的函数
+
+6.读写锁
+7.条件变量
+被条件变量阻塞的线程信息会被记录到这个变量当中去。
+
+定义一个条件变量类型的：pthread_cond_t cond;
+
+初始化：int pthread_cond_init(pthread_cond_t *restrict cond,const pthread_condattr_t *restrict attr);
+参数:
+
+cond: 条件变量的地址
+
+attr: 条件变量属性，一般使用默认属性，指定为 NULL
+
+销毁并释放：int pthread_cond_destroy(pthread_cond_t *cond);
+
+阻塞线程：int pthread_cond_wait(pthread_cond_t *restrict cond, pthread_mutex_t *restrict mutex);(哪个线程调用这个函数，哪个线程就会被阻塞住)
+
+该函数会对这个互斥锁做以下几件事情：
+
+在阻塞线程时候，如果线程已经对互斥锁 mutex 上锁，那么会将这把锁打开，这样做是为了避免死锁
+当线程解除阻塞的时候，函数内部会帮助这个线程再次将这个 mutex 互斥锁锁上，继续向下访问临界区
+唤醒线程：int pthread_cond_broadcast(pthread_cond_t *cond);(唤醒阻塞在条件变量上的线程, 被阻塞的线程全部解除阻塞)
+条件变量的应用：（生产者消费者模型）
+
+//采用链表来表示生产者生产的东西
+struct node {
+    int number;
+    struct node *next;
+};
+
+pthread_cond_t cond;
+//定义条件变量，控制所有的消费者线程
+pthread_mutex_t mutex;
+//互斥锁变量
+
+struct node *head = NULL;
+//采用的是头插法
+
+//生产者进行的函数
+void *producer(void *argc) {
+    while (1) {
+        pthread_mutex_lock(&mutex);
+        struct node *pnew = (struct node *)malloc(sizeof(struct node));
+        pnew->next = head;
+        pnew->number = rand() % 1000;
+        //添加链表节点中的内容
+        head = pnew;
+        printf("+++producer, number = %d, tid = %ld\n", pnew->number, pthread_self());
+        pthread_mutex_unlock(&mutex);
+
+        pthread_cond_broadcast(&cond);
+        //生产了东西之后，通知消费者
+        //让其阻塞的函数都恢复工作
+
+        sleep(rand() % 3);
+    }
+    return NULL;
+}
+
+//消费者进行的函数
+void *consumer (void *argc) {
+    while (1) {
+        pthread_mutex_lock(&mutex);
+        while (head == NULL) {
+            //任务队列头节点如果一直是空的话就会被阻塞住
+            //所有进入循环被阻塞的线程都被记录在cond函数里面
+            //同时进入循环的线程对应的锁都将被重新打开
+            //当消费者线程被解除阻塞之后，函数内部会自动给上锁
+            //这个时候又重新保证了读取数据的安全性
+            pthread_cond_wait(&cond, &mutex);
+        }
+        //取出头节点然后咔嚓掉
+        struct node *pnode = head;
+        printf("--consumer: number: %d, tid = %ld\n", pnode->number, pthread_self());
+        head = head->next;
+        free(pnode);
+        pthread_mutex_unlock(&mutex);
+
+        sleep(rand() % 3);
+    }
+    return NULL;
+}
+
+int main() {
+    //初始化条件变量
+    pthread_cond_init(&cond, NULL);
+    pthread_mutex_init(&mutex, NULL);
+    
+    //创建生产者和消费者线程
+    pthread_t ptid[5];
+    pthread_t ctid[5];
+    for (int i = 0; i < 5; i++) {
+        pthread_create(&ptid[i], NULL, producer, NULL);
+    }
+    for (int i = 0; i < 5; i++) {
+        pthread_create(&ctid[i], NULL, consumer, NULL);
+    }
+
+    //释放资源
+    for (int i = 0; i < 5; i++) {
+        //阻塞等待子线程退出
+        pthread_join(ptid[i], NULL);
+    }
+    for (int i = 0; i < 5; i++) {
+        pthread_join(ctid[i], NULL);
+    }
+    // 销毁条件变量
+    pthread_cond_destroy(&cond);
+    pthread_mutex_destroy(&mutex);
+    
+    return 0;
+}
+这块的while (head == NULL)如果像我刚开始想得是if (head == NULL)是由bug的，具体分析如下：
+
+当生产者生产了1个节点, 调用 pthread_cond_broadcast(&cond); 唤醒了所有阻塞的线程
+- 有一个消费者线程通过 pthread_cond_wait()加锁成功, 其余没有加锁成功的线程继续阻塞
+- 加锁成功的线程向下运行, 并成功删除一个节点, 然后解锁
+- 没有加锁成功的线程解除阻塞继续抢这把锁, 另外一个子线程加锁成功
+- 但是这个线程删除链表节点的时候链表已经为空了, 后边访问这个空节点的时候就会出现段错误
