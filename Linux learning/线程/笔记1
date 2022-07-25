@@ -1,0 +1,213 @@
+8.信号量
+同样的也是为了处理多线程任务同步的问题，挺好理解的。一个线程完成任务之后就会通过信号告诉其他线程，其他线程收到信号之后再进行某些动作。
+
+信号量（信号灯）与互斥锁和条件变量的主要不同在于” 灯” 的概念，灯亮则意味着资源可用，灯灭则意味着不可用。
+
+相关函数：
+创建一个信号灯：sem_t sem;
+初始化：int sem_init(sem_t *sem, int pshared, unsigned int value);
+参数:
+
+sem：信号量变量地址
+
+pshared：
+
+    0：线程同步
+
+    非 0：进程同步
+
+value：初始化当前信号量拥有的资源数（>=0），如果资源数为 0，线程就会被
+
+阻塞了。
+销毁：int sem_destroy(sem_t *sem);
+使用: int sem_wait(sem_t *sem);
+当线程调用这个函数，并且 sem 中的资源数 >0，线程不会阻塞，线程会占用 sem 中的一个资源，因此资源数 - 1，直到 sem 中的资源数减为 0 时，资源被耗尽，因此线程也就被阻塞了。
+int sem_post(sem_t *sem);
+调用该函数会将 sem 中的资源数 +1，如果有线程在调用 sem_wait、sem_trywait、sem_timedwait 时因为 sem 中的资源数为 0 被阻塞了，这时这些线程会解除阻塞，获取到资源之后继续向下运行。
+int sem_getvalue(sem_t *sem, int *sval);
+通过这个函数可以查看 sem 中现在拥有的资源个数，通过第二个参数 sval 将数据传出，也就是说第二个参数的作用和返回值是一样的。
+信号量的使用：
+
+当资源总数为一个的时候：
+//采用链表来表示生产者生产的东西
+struct node {
+    int number;
+    struct node *next;
+};
+
+sem_t psem;
+//生产者线程信号量
+sem_t csem;
+//消费者线程信号量
+pthread_mutex_t mutex;
+//互斥锁变量
+
+struct node *head = NULL;
+//采用的是头插法
+
+//生产者进行的函数
+void *producer(void *argc) {
+    while (1) {
+        //生产者生产消耗一个资源
+        sem_wait(&psem);
+        struct node *pnew = (struct node *)malloc(sizeof(struct node));
+        pnew->next = head;
+        pnew->number = rand() % 1000;
+        //添加链表节点中的内容
+        head = pnew;
+        printf("+++producer, number = %d, tid = %ld\n", pnew->number, pthread_self());
+        pthread_mutex_unlock(&mutex);
+
+        sem_post(&csem);
+        //生产了东西之后，通知消费者
+        //让消费者的资源数加一
+
+        sleep(rand() % 3);
+    }
+    return NULL;
+}
+
+//消费者进行的函数
+void *consumer (void *argc) {
+    while (1) {
+        sem_wait(&csem);
+        //取出头节点然后咔嚓掉
+        struct node *pnode = head;
+        printf("--consumer: number: %d, tid = %ld\n", pnode->number, pthread_self());
+        head = head->next;
+        free(pnode);
+        //消费者消费完成之后，通知生产者，给生产者加信号灯
+        sem_post(&psem);
+
+        sleep(rand() % 3);
+    }
+    return NULL;
+}
+
+int main() {
+    //初始化信号量
+    sem_init(&psem, 0 , 1);
+    sem_init(&csem, 0, 0);
+    pthread_mutex_init(&mutex, NULL);
+    
+    //创建生产者和消费者线程
+    pthread_t ptid[5];
+    pthread_t ctid[5];
+    for (int i = 0; i < 5; i++) {
+        pthread_create(&ptid[i], NULL, producer, NULL);
+    }
+    for (int i = 0; i < 5; i++) {
+        pthread_create(&ctid[i], NULL, consumer, NULL);
+    }
+
+    //释放资源
+    for (int i = 0; i < 5; i++) {
+        //阻塞等待子线程退出
+        pthread_join(ptid[i], NULL);
+    }
+    for (int i = 0; i < 5; i++) {
+        pthread_join(ctid[i], NULL);
+    }
+    // 销毁信号灯
+    sem_destroy(&psem);
+    sem_destroy(&csem);
+    
+    return 0;
+}
+当资源数量比较多的时候：(出现多个线程访问共享资源的问题，要防止资源访问混乱)
+//采用链表来表示生产者生产的东西
+struct node {
+    int number;
+    struct node *next;
+};
+
+sem_t psem;
+//生产者线程信号量
+sem_t csem;
+//消费者线程信号量
+pthread_mutex_t mutex;
+//互斥锁变量
+
+struct node *head = NULL;
+//采用的是头插法
+
+//生产者进行的函数
+void *producer(void *argc) {
+    while (1) {
+        //生产者生产消耗一个资源
+        sem_wait(&psem);
+        pthread_mutex_lock(&mutex);
+        struct node *pnew = (struct node *)malloc(sizeof(struct node));
+        pnew->next = head;
+        pnew->number = rand() % 1000;
+        //添加链表节点中的内容
+        head = pnew;
+        printf("+++producer, number = %d, tid = %ld\n", pnew->number, pthread_self());
+        pthread_mutex_unlock(&mutex);
+
+        sem_post(&csem);
+        //生产了东西之后，通知消费者
+        //让消费者的资源数加一
+
+        sleep(rand() % 3);
+    }
+    return NULL;
+}
+
+//消费者进行的函数
+void *consumer (void *argc) {
+    while (1) {
+        sem_wait(&csem);
+        pthread_mutex_lock(&mutex);
+        //取出头节点然后咔嚓掉
+        struct node *pnode = head;
+        printf("--consumer: number: %d, tid = %ld\n", pnode->number, pthread_self());
+        head = head->next;
+        free(pnode);
+        pthread_mutex_unlock(&mutex);
+        //消费者消费完成之后，通知生产者，给生产者加信号灯
+        sem_post(&psem);
+
+        sleep(rand() % 7);
+    }
+    return NULL;
+}
+
+int main() {
+    //初始化信号量
+    sem_init(&psem, 0 , 5);
+    sem_init(&csem, 0, 0);
+    //初始化互斥锁
+    pthread_mutex_init(&mutex, NULL);
+    
+    //创建生产者和消费者线程
+    pthread_t ptid[5];
+    pthread_t ctid[5];
+    for (int i = 0; i < 5; i++) {
+        pthread_create(&ptid[i], NULL, producer, NULL);
+    }
+    for (int i = 0; i < 5; i++) {
+        pthread_create(&ctid[i], NULL, consumer, NULL);
+    }
+
+    //释放资源
+    for (int i = 0; i < 5; i++) {
+        //阻塞等待子线程退出
+        pthread_join(ptid[i], NULL);
+    }
+    for (int i = 0; i < 5; i++) {
+        pthread_join(ctid[i], NULL);
+    }
+    // 销毁信号灯
+    sem_destroy(&psem);
+    sem_destroy(&csem);
+    pthread_mutex_destroy(&mutex);
+    
+    return 0;
+}
+锁互斥锁和使用信号量那里的顺序不能够调换，如果调换的话，会造成死锁的问题，具体分析如下：
+
+假设某一个消费者线程先运行，调用 pthread_mutex_lock(&mutex); 对互斥锁加锁成功，然后调用 sem_wait(&csem); 由于没有资源，因此被阻塞了。其余的消费者线程由于没有抢到互斥锁，因此被阻塞在互斥锁上。对应生产者线程第一步操作也是调用 pthread_mutex_lock(&mutex);，但是这时候互斥锁已经被消费者线程锁上了，所有生产者都被阻塞，到此为止，多余的线程都被阻塞了，程序产生了死锁。
+主线程和子线程的存亡
+如果主线程死了，那么整个地址空间就会被释放（他的一个释放原理是什么？ 是把这个主线程的地址以下的空间全部都释放掉吗？）
+全局变量和堆内存
