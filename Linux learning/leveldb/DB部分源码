@@ -1,0 +1,57 @@
+class LEVELDB_EXPORT DB {
+public:
+	//打开数据库
+	static Status Open(const Options& options,   //options为打开的方式
+                     const std::string& name,	 //文件名
+                     DB** dbptr);				 //数据库实例对象
+	DB() = default;//设置默认构造函数
+	DB(const DB&) = delete;//禁止拷贝构造
+	DB& operator=(const DB&) = delete;//禁止赋值操作符
+	virtual ~DB();
+    
+	//写入键值对
+	virtual Status Put(const WriteOptions& options,
+                     const Slice& key,
+                     const Slice& value) = 0;
+	//删除键值对
+	virtual Status Delete(const WriteOptions& options, const Slice& key) = 0;
+	
+	//批量写入
+	virtual Status Write(const WriteOptions& options, WriteBatch* updates) = 0;
+	
+	//通过键值读取
+	virtual Status Get(const ReadOptions& options,
+                     const Slice& key, std::string* value) = 0;
+  	
+	//此函数将返回一个可以迭代遍历数据库的句柄
+	virtual Iterator* NewIterator(const ReadOptions& options) = 0;
+  	
+	//返回数据库当前状态的快照
+	virtual const Snapshot* GetSnapshot() = 0;
+	
+	//释放之前获取的快照
+	virtual void ReleaseSnapshot(const Snapshot* snapshot) = 0; 
+  	
+    //返回相关属性的状态
+    //属性名包括：
+    //"leveldb.num-files-at-level<N>"返回level N的文件数目
+    //"leveldb.stats"返回内部操作的统计情况
+    //"leveldb.sstables"返回sstables的情况
+    //"leveldb.approximate-memory-usage"返回数据库所使用的内存的近似字节数
+	virtual bool GetProperty(const Slice& property, std::string* value) = 0;
+  	
+	//返回文件的最大使用空间
+	virtual void GetApproximateSizes(const Range* range, int n,
+                                   uint64_t* sizes) = 0;
+	
+	//调用此接口会重新压缩相应的数据
+	virtual void CompactRange(const Slice* begin, const Slice* end) = 0;
+};
+
+//删除数据库
+LEVELDB_EXPORT Status DestroyDB(const std::string& name,
+                                const Options& options);
+
+//修复数据库
+LEVELDB_EXPORT Status RepairDB(const std::string& dbname,
+                               const Options& options);
