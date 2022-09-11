@@ -1,0 +1,54 @@
+#include <iostream>
+#include <string.h>
+#include <vector>
+#include <stack>
+//多项式加法器的实现
+using namespace std;
+void to_symbol(string&, string&);
+void to_answer(string&);
+
+int main() {
+    cout << "请输入您的多项式运算式子：" << endl;
+    string s, symbol;//一个存中缀，一个存后缀
+    cin >> s;
+    to_symbol(s, symbol);//中缀转后缀
+    to_answer(symbol);//后缀计算结果
+}
+
+void to_symbol(string& s1, string& s2) {
+    int len = s1.size();
+    int i = 0;
+    stack<char> op;//存储符号的栈
+
+    while (i < len) {//开始遍历中缀中的每一项
+        if (s1[i] > '0' && s1[i] < '9') {//是数字的话
+            s2.push_back(s1[i]);
+        } else {//运算符
+            if (s1[i] == '(') {//左括号
+                op.push(s1[i]);
+            } else if (s1[i] == ')') {//右括号
+                while (op.empty() != 0 && op.top() != '(') {
+                    string now = op.top();//将char转化成string类
+                    s2.push_back(now);
+                    op.pop();
+                }
+                op.pop();//将（出栈
+            } else {//算数运算符
+                while () {
+
+                }
+                op.push(s1[i]);
+            }
+        }
+        i++;
+    }
+    while (op.empty() != 0) {//将剩余符号栈中的所有符号全部存入s2中
+        string temp = string(1, op.top());
+        s2.push_back(temp);
+        op.pop();
+    }
+}
+
+void to_answer(string& s) (
+    
+)
